@@ -69,6 +69,24 @@ public class UserController {
         return ResponseEntity.ok(new ArrayList<>(users.values()));
     }
 
+    // ======================
+    // UPDATE USER (Protected)
+    // ======================
+    @PutMapping("/users/{id}")
+    public ResponseEntity<User> updateUser(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestBody User user) {
+
+        if (! isAuthorized(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        int id = idCounter.incrementAndGet();
+        user.setId(id);
+        users.put(id, user);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
 
     // ======================
     // DELETE USER (Protected)
