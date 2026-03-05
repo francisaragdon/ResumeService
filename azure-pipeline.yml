@@ -1,0 +1,75 @@
+trigger:
+  branches:
+    include:
+      - QA
+      - master
+
+resources:
+  repositories:
+    - repository: AutomationProject
+      type: git
+      name: Project/AutomationProject
+
+pool:
+  name: Default
+
+stages:
+  # 1. BUILD STAGE
+  - stage: Build
+    jobs:
+      - job: MavenBuild
+        steps:
+          - checkout: self
+          - task: Maven@4
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'clean install -DskipTests'
+
+  # 2. QA STAGE + TESTING
+  - stage: Deploy_QA
+    displayName: "Deploy & Run QA Test Pipeline"
+    dependsOn: Build
+    jobs:
+      - deployment: QA_Deployment
+        environment: 'QA'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - checkout: AutomationProject
+
+                # STEP A: Deploy the code to your QA folder/container
+                - script: echo "Deploying to QA environment..."
+
+                # STEP B: Run the Automation Tests against QA
+                - task: Maven@4
+                  displayName: "Run QA Smoke Tests"
+                  inputs:
+                    mavenPomFile: 'AutomationProject/pom.xml'
+                    goals: 'verify -Denv=QA' # Passing a variable to tell Maven it's QA
+
+  # 3. STAGING STAGE + TESTING
+  - stage: Deploy_Staging
+    displayName: "Deploy & Test Staging"
+    dependsOn: Deploy_QA
+    condition: succeeded() # Only runs if QA tests passed!
+    jobs:
+      - deployment: Staging_Deployment
+        environment: 'Staging'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - checkout: AutomationRepo
+
+                # STEP A: Deploy the code to your Staging folder/container
+                - script: echo "Deploying to Staging..."
+
+                # STEP B: Run the EXACT SAME tests but against Staging
+                - task: Maven@4
+                  displayName: "Run Staging Regression"
+                  inputs:
+                    mavenPomFile: 'AutomationRepo/pom.xml'
+                    goals: 'verify -Denv=Staging' # Testing the Staging URL instead
