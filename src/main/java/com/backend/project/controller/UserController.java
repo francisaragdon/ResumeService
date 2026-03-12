@@ -44,7 +44,7 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestBody User user) {
 
-        if (! isAuthorized(token)) {
+        if (!isAuthorized(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
@@ -70,6 +70,29 @@ public class UserController {
     }
 
     // ======================
+    // GET USER BY ID (Protected)
+    // ======================
+    @GetMapping("/users/{id}")
+    public ResponseEntity<User> getUserById(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String token) {
+
+        System.out.println("token " + token);
+
+        if (!isAuthorized(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        User user = users.get(id);
+
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        return ResponseEntity.ok(user);
+    }
+
+    // ======================
     // UPDATE USER (Protected)
     // ======================
     @PutMapping("/users/{id}")
@@ -77,7 +100,7 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestBody User user) {
 
-        if (! isAuthorized(token)) {
+        if (!isAuthorized(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
