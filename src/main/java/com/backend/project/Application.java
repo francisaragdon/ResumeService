@@ -18,7 +18,7 @@ public class Application {
 				.info(new Info()
 						.title("Backend User API")
 						.version("1.0.0")
-						.description("A simple backend API with login and CRUD operations")
+						.description("API with CRUD operations")
 				);
 	}
 }

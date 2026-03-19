@@ -4,72 +4,152 @@ trigger:
       - QA
       - master
 
-resources:
-  repositories:
-    - repository: AutomationProject
-      type: git
-      name: Project/AutomationProject
-
-pool:
-  name: Default
+variables:
+  imageName: ghcr.io/francisaragdon/resumeservice/app
 
 stages:
-  # 1. BUILD STAGE
-  - stage: Build
-    jobs:
-      - job: MavenBuild
-        steps:
-          - checkout: self
-          - task: Maven@4
-            inputs:
-              mavenPomFile: 'pom.xml'
-              goals: 'clean install -DskipTests'
 
-  # 2. QA STAGE + TESTING
+  # =========================
+  # BUILD + PUSH IMAGE
+  # =========================
+  - stage: Build
+    displayName: Build and Push Docker Image
+    jobs:
+      - job: BuildPush
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+
+          - checkout: self
+
+          - task: Docker@2
+            displayName: Login to GHCR
+            inputs:
+              command: login
+              containerRegistry: 'GHCR-ServiceConnection'
+
+          - task: Docker@2
+            displayName: Build and Push QA Image
+            inputs:
+              command: buildAndPush
+              containerRegistry: 'GHCR-ServiceConnection'
+              repository: francisaragdon/resumeservice/app
+              Dockerfile: '**/Dockerfile'
+              tags: |
+                qa
+
+          - task: Docker@2
+            displayName: Build and Push Staging Image
+            inputs:
+              command: buildAndPush
+              containerRegistry: 'GHCR-ServiceConnection'
+              repository: francisaragdon/resumeservice/app
+              Dockerfile: '**/Dockerfile'
+              tags: |
+                staging
+
+          - task: Docker@2
+            displayName: Build and Push Prod Image
+            inputs:
+              command: buildAndPush
+              containerRegistry: 'GHCR-ServiceConnection'
+              repository: francisaragdon/resumeservice/app
+              Dockerfile: '**/Dockerfile'
+              tags: |
+                prod
+  
+
+  # =========================
+  # DEPLOY QA + TEST
+  # =========================
   - stage: Deploy_QA
-    displayName: "Deploy & Run QA Test Pipeline"
     dependsOn: Build
     jobs:
-      - deployment: QA_Deployment
-        environment: 'QA'
+      - deployment: DeployQA
+        environment: QA
         strategy:
           runOnce:
             deploy:
               steps:
-                - checkout: self
-                - checkout: AutomationProject
 
-                # STEP A: Deploy the code to your QA folder/container
-                - script: echo "Deploying to QA environment..."
-
-                # STEP B: Run the Automation Tests against QA
-                - task: Maven@4
-                  displayName: "Run QA Smoke Tests"
+                - task: AzureCLI@2
+                  displayName: Deploy to QA Container App
                   inputs:
-                    mavenPomFile: 'AutomationProject/pom.xml'
-                    goals: 'verify -Denv=QA' # Passing a variable to tell Maven it's QA
+                    azureSubscription: 'Azure-ServiceConnection'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name app-qa-v2 \
+                        --resource-group Automation-RG \
+                        --image ghcr.io/francisaragdon/resumeservice/app:qa
 
-  # 3. STAGING STAGE + TESTING
+                - checkout: self
+
+                - task: Maven@4
+                  displayName: Run QA Tests
+                  inputs:
+                    mavenPomFile: 'pom.xml'
+                    goals: 'clean verify -Denv=QA'
+
+
+  # =========================
+  # DEPLOY STAGING + TEST
+  # =========================
   - stage: Deploy_Staging
-    displayName: "Deploy & Test Staging"
     dependsOn: Deploy_QA
-    condition: succeeded() # Only runs if QA tests passed!
+    condition: succeeded()
     jobs:
-      - deployment: Staging_Deployment
-        environment: 'Staging'
+      - deployment: DeployStaging
+        environment: Staging
         strategy:
           runOnce:
             deploy:
               steps:
-                - checkout: self
-                - checkout: AutomationRepo
 
-                # STEP A: Deploy the code to your Staging folder/container
-                - script: echo "Deploying to Staging..."
-
-                # STEP B: Run the EXACT SAME tests but against Staging
-                - task: Maven@4
-                  displayName: "Run Staging Regression"
+                - task: AzureCLI@2
+                  displayName: Deploy to Staging Container App
                   inputs:
-                    mavenPomFile: 'AutomationRepo/pom.xml'
-                    goals: 'verify -Denv=Staging' # Testing the Staging URL instead
+                    azureSubscription: 'Azure-ServiceConnection'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name app-staging-v2 \
+                        --resource-group Automation-RG \
+                        --image ghcr.io/francisaragdon/resumeservice/app:staging
+
+                - checkout: self
+
+                - task: Maven@4
+                  displayName: Run Staging Tests
+                  inputs:
+                    mavenPomFile: 'pom.xml'
+                    goals: 'clean verify -Denv=Staging'
+
+
+  # =========================
+  # DEPLOY PROD (OPTIONAL APPROVAL)
+  # =========================
+  - stage: Deploy_Prod
+    dependsOn: Deploy_Staging
+    condition: succeeded()
+    jobs:
+      - deployment: DeployProd
+        environment: Prod   # You can configure approvals in Azure DevOps UI
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                - task: AzureCLI@2
+                  displayName: Deploy to Prod Container App
+                  inputs:
+                    azureSubscription: 'Azure-ServiceConnection'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name app-prod-v2 \
+                        --resource-group Automation-RG \
+                        --image ghcr.io/francisaragdon/resumeservice/app:prod
