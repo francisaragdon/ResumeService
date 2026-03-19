@@ -1,0 +1,23 @@
+# Stage 1: Build the Java application using Maven
+FROM maven:3.9.6-eclipse-temurin-21 AS build
+WORKDIR /app
+
+# Copy the configuration and source code
+COPY pom.xml .
+COPY src ./src
+
+# Build the JAR file (skipping tests for a faster build)
+RUN mvn clean package -DskipTests
+
+# Stage 2: Create the final lightweight image
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+
+# Copy the built JAR from the first stage
+COPY --from=build /app/target/*.jar app.jar
+
+# Expose the port your Spring Boot app uses
+EXPOSE 8080
+
+# Command to run the app
+ENTRYPOINT ["java", "-jar", "app.jar"]
